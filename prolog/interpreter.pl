@@ -69,6 +69,9 @@ query(<=(Q, _)) :-
         % which will be treated differently from conjunction as it is
         % in the position of an intuitionistic fact.
         query(Q).
+query(not(Q)) :-
+        !,
+        query(Q).
 query(Call) :-
         % Make sure such a clause exists.  We cannot pass the call as-is
         % to clause, since it may not unify with the head of a clause in
@@ -116,6 +119,9 @@ interpret(<=(Q, S), Facts) :- % ILP only
         % chronological order from when they were added, with the most
         % recent facts being considered before earlier facts.
         interpret(Q, [S|Facts]).
+interpret(not(Q), Facts) :- % standard
+        !,
+        \+ interpret(Q, Facts).
 interpret(Q, Facts) :- % ILP only
         % Nondeterministically pick a fact that Q matches on.
         % We intentionally don't use cut here, because it
