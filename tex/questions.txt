@@ -17,6 +17,9 @@ The following are some questions / discussion points which I want to cover in th
      "if I take and pass CS101, will I be able to graduate?".  This sort
      of query is very unnatural in classical LP, but easy in ILP.
 
+   - Looking at the different LPs as different restrictions and capabilities
+     on the ruleset.
+
 2. Why is does the literature seem so obtuse?
    - Focus is more on proofs of properties of the interpreter itself.
      Proofs are done in pencil-and-paper fashion, and so much of the
