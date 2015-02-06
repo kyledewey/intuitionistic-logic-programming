@@ -26,6 +26,28 @@
 %    then I need to nondeterministically execute both, which is consistent
 %    with Prolog semantics).
 
+% Below are some key implementation notes:
+%
+% 1. I'm piggybacking off of Prolog for quite a bit, specifically for:
+%    - The syntax
+%    - The rulebase
+%    - Code for handling the rulebase and performing calls
+%    - Unification
+%    - Nondeterminism
+%    - Conjunction
+%    - Disjunction
+%    - Negation-as-failure
+%
+%    Observe that ILP is just classical logic programming with intuitionistic
+%    implication, which is why most rules are handled simply by deferring
+%    to Prolog.
+%
+% 2. I handle only intuitionistic facts.  I'm not sure how intuitionistic
+%    rules would work, though it is my guess that if we had these, we would
+%    need some way to say that a variable should be universally quantified.
+%    That is, we need to differentiate between variables that are introduced
+%    in the rule being added, and variables which are used in the surrounding
+%    scope.
 
 % Syntax:
 %
@@ -35,8 +57,14 @@
 % p \in Param ::= a | x | s
 % s \in Structure ::= a(\vec{p})
 % c \in Clause ::= s :- q.
-% q \in Query ::= true | false | q_1, q_2 | q_1 ; q_2 | s | q <= s
-
+% q \in Query ::= true         % always succeeds
+%                 | false      % always fails
+%                 | q_1, q_2   % conjunction
+%                 | q_1 ; q_2  % disjunction
+%                 | s          % calls
+%                 | q <= s     % intuitionistic implication
+%                 | s => q     % intuitionistic implication
+%
 % -Query: Query
 % -Facts: [HypotheticalFact]
 %
