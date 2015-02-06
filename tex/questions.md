@@ -67,3 +67,10 @@ The following are some questions / discussion points which I want to cover in th
      unification, it's not a very practical language for just doing ILP
      (performance will suffer).
 
+7. What underlying logic does ILP correspond to?
+   - The same logic as classical LP, along with intuitionistic implication
+   - Need to be clear that classical LP does not correspond to classical logic;
+     the only rule in classical LP is SLD-resolution, which is a combination
+     of other logic rules.  This is why ILP is strictly more expressive than
+     classical LP, while intuitionistic logic is strictly less expressive
+     than classical logic.
