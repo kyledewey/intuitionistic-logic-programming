@@ -127,7 +127,7 @@ interpretHypothetical(Query, Fact, InputFacts, OutputFacts) :-
 
         interpret(Query, [Fact|InputFacts], OutputFacts),
 
-        % Make sure that we used S (this is linear, not affine)
+        % Make sure that we used the fact (this is linear, not affine)
         \+ factPresent(OutputFacts, Fact).
 
 % -Query: Query
