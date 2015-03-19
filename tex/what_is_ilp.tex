@@ -1,0 +1,190 @@
+\section{The What and Why of ILP}
+\subsection{Motivation---Hypothetical Reasoning}
+In hypothetical reasoning, we ask questions like ``if we assume $p$ is true, is $q$ also true?''
+This sort of reasoning is quite common, both in informal settings and more formal settings.
+Informally, examples may be ``If I grab coffee, will I be late for a meeting?'', or ``if I take CS162, will I be able to graduate?''.
+In a more formal setting, Gabbay et al.~\cite{Gabbay} found this sort of reasoning was necessary to formally define the British Nationality Act, and was also relevant to other laws and even tax codes.
+As such, hypothetical reasoning is an important capability for a logic to have, including in a logic programming setting.
+
+\subsection{Limitations of LP}
+\label{sec:lp_limitations}
+LP is, unfortunately, a poor fit for performing hypothetical reasoning.
+For example, consider the requirements for graduation from a university, adapted from Bonner~\cite{Bonner88}.
+A possible query is ``If a took a given class $C$, would I be eligible to graduate?''
+Assuming which classes have been taken is represented as a rulebase, which is arguably the most natural representation possible, this sort of question is difficult to answer.
+Fundamentally, it requires adding a fact to the rulebase and asking the modified rulebase if the student is eligible for graduation, and this act of modifying the rulebase is not possible in pure, classical LP.
+
+While there are extralogical (i.e., not representable in pure LP) extensions to LP which do allow for the dynamic modification of the rulebase, these are a poor fit for answering these sort of questions.
+Care must be taken to ensure that for every fact added, there is a corresponding removal of the same fact, or else the rulebase will be modified for a time beyond that of the query.
+This can lead to very subtle bugs.
+Moreover, even with these extralogical features, we are limited to the kinds of facts we can add.
+For example, say we want to add in the following fact to a rulebase holding classes which have been taken, indicating that the student has taken some class \texttt{C}:
+
+\begin{verbatim}
+take(C).
+\end{verbatim}
+
+\noindent If the variable \texttt{C} above is uninstantiated, then we can easily get unsound behavior with typical extralogical features (e.g., \texttt{assert}).
+For example, consider the following query:
+
+\begin{verbatim}
+:- take(class1), take(class2).
+\end{verbatim}
+
+\noindent The above query will always succeed, \textbf{independent of} the rest of the contents of the rulebase.
+This is because with these extralogical features, facts get treated like whole new horn clauses at the global level (i.e., declared with \texttt{:-}).
+This gives us unsound behavior with respect to hypothetical reasoning.
+Our intention with this fact was to say ``assume I have taken some unknown class $C$'', but the actual fact which is inserted states ``assume I have taken all possible classes''.
+In general, there is no way to fix this problem in LP---we cannot add hypothetical facts to a database.
+
+\subsubsection{Workarounds}
+This section is somewhat of an aside to how people deal with this problem in LP.
+It consists mostly of my own observations drawn from both my experience coding in LP and reading software engineering materials on writing Prolog.
+
+The workaround in classical LP to allow for hypothetical reasoning is to take information out of the rulebase and put it directly into queries instead.
+For the example above, this means that instead of putting classes taken directly in the rulebase, we instead encode the classes taken in a data structure, and pass this data structure around.
+This can be unnatural and downright obnoxious depending on how much state needs to be passed around, and can be seen as an anti-pattern.
+That said, in the Prolog world this seems to be such an automatic thing that, as far as I can tell, no one points this out as a problem.
+
+
+\subsection{Enter ILP}
+The intention behind ILP is to provide capabilities for correct hypothetical reasoning directly at the logic level, without requiring any sort of ad-hoc extralogical features.
+While the literature tends to make this idea sound very opposing, it is remarkably simple.
+In pure LP, the rulebase is static, and all rules are globally available.
+In ILP, the rulebase allows for dynamic additions in a scoped manner via implications.
+For example, I can issue the following query in ILP:
+
+\begin{verbatim}
+:- (take(C) => canGraduate), not(canGraduate).
+\end{verbatim}
+
+The above query will add the fact \texttt{take(C)} to the rulebase, and then execute \texttt{canGraduate} under this modified rulebase.
+Once the call to \texttt{canGraduate} finishes, the rulebase is reverted to exactly what it was before \texttt{take(C)} was added.
+Finally, we check to see that \texttt{canGraduate} is not satisfiable under the original rulebase.
+If the query as a whole succeeds, this means that the student is one class away from being able to graduate, and \texttt{C} will conveniently be bound to whatever class remaining to take that is necessary to graduate.
+
+\subsection{Relationship to Logic}
+In ILP, the idea of dynamically adding facts in a scoped manner is derived from the natural deduction rule of implication introduction, shown below:
+
+\begin{center}
+  $\infer{\Gamma \vdash A \Rightarrow B}{\Gamma, A \vdash B}$
+\end{center}
+
+\noindent The above rule states that in order to prove $A \Rightarrow B$, it suffices to assume that $A$ is true and to then prove $B$.
+Key to this is that we only assume $A$ for the duration of the proof of $B$; if there is some other proof goal for which $A \Rightarrow B$ is a subterm, $A$ is still assumed only duing the proof of $B$, not the larger term.
+This corresponds quite closely to the example shown in Section~\ref{sec:lp_limitations}, as long as we interchange the rulebase with $\Gamma$---we add a rule to the rulebase, prove some other term, and then revert the rulebase back to what it was before the proof.
+
+While this observation ties hypothetical reasoning to logic, it alone is not sufficient to explain why this is referred to specifically as ``intuitionistic'', as opposed to classical.
+After all, both intuitionistic and classical logic share the same natural deduction rule for implication elimination.
+However, there is an additional axiom in classical logic, namely the law of the excluded middle (i.e., $p \lor \neg p$ is a tautology).
+Because of the law of the excluded middle, we can derive in classical logic that $p \Rightarrow q$ is equivalent to $\neg p \lor q$.
+This ends up being disasterous in the context of hypothetical reasoning.
+Bonner~\cite{Bonner88} provides a generic example showing exactly why, repeated here for convenience.
+Consider the following query involving hypothetical reasoning: ``If one of $A$ or $B$ were true, would $C$ be true?''
+Logically, we can represent this as:
+
+\begin{center}
+  $(A \Rightarrow C) \lor (B \Rightarrow C)$
+\end{center}
+
+\noindent The about query has different semantics in classical logic than it does in intuitionistic logic.
+In classical logic, we can step-wise reduce it to a different query:
+
+\begin{center}
+  \begin{align*}
+    (A \Rightarrow C) &\lor (B \Rightarrow C)\\
+    (\neg A \lor C) &\lor (\neg B \lor C)\\
+    \neg A \lor \neg B &\lor C\\
+    \neg(A \land B) &\lor C\\
+    (A \land B) &\Rightarrow C
+  \end{align*}
+\end{center}
+
+The final query above in the chain states that ``If both $A$ and $B$ were true, would $C$ be true?'', which is a slightly different query than what we started with.
+Initially, we assumed that either $A$ or $B$ is true, but classically we can end up assuming that both $A$ and $B$ is true from the same premesis.
+This cannot be done in an intuitionistic setting, because we may not have a proof of both $A$ and $B$, reflected through the fact that the above reduction relied upon the rule of the excluded middle.
+From a high level, this corresponds to saying we might not have both facts $A$ and $B$ available in a logic programming languages, and so the rule for implication used in hypothetical reasoning corresponds to intuitionistic logic, not classical logic.
+
+\subsection{Relationship to Classical Logic Programming}
+While the previous section explains the connection hypothetical reasoning has to intuitionistic logic, it does not explain why, exactly, this operator is incompatible with classical logic programming.
+As mentioned before, in classical logic programming, excluding extralogical features we are not allowed to dynamically update the rulebase.
+With respect to the rules for natural deduction, this should strike the reader as being odd if we observe that the rulebase corresponds to $\Gamma$.
+Multiple natural deduction rules update $\Gamma$ (or, equivalently, the rulebase), namely:
+\begin{itemize}
+  \item Implication introduction
+  \item Negation introduction
+  \item Existential quantification elimination
+\end{itemize}
+
+It turns out in classical logic programming, none of the above rules exist.
+That is, classical logic programming only corresponds to a \textbf{fragment} of classical logic.
+In the previous section, it was explained that in classical logic, we can exploit the law of the excluded middle to remove the need for implication entirely, and so implication introduction is completely unnecessary (and thus nonexistant).
+As for negation introduction, LP replaces negation with a weaker form known as negation-as-failure, which does not require dynamically adding facts to the rulebase~\cite{Nilsson}.
+Additionally, variables in LP are implicitly universally quantified~\cite{Nilsson}, and so existential quantification elimination is unused.
+
+Because of these restrictions, barring extralogical features, it is guaranteed in LP that the rulebase remains static throughout execution.
+This enables major optimizations like indexing~\cite{Ait-Kaci:1991:WAM:113900, AICPub641:1983}, which can be used to reduce the overhead of clause calls and to prune some unsatisfiable paths in the search space without actually exploring them.
+Given that in LP, execution can be handled purely in terms of calls via SLD-resolution~\cite{Nilsson, Lloyd}, reducing call overhead has a major impact on performance, and is a fundamental kind of optimization to real-world LP engines (e.g.,~\cite{wielemaker:2011:tplp, Diaz:2000:GPS:338407.338553}).
+If we have the capability to dynamically modify the rulebase, then these optimizations can become much harder to perform, or even impossible.
+Additionally, the very nature of hypothetical reasoning requires that we maintain at any given point an arbitrary number of versions of the rulebase, which necessitates a fundamentally different way of thinking than what is commonly employed.
+
+\subsection{Relationship Between Different Kinds of Logic Programming}
+I finish this section with a discussion of LP, ILP, and ILLP, and how they relate to each other.
+From a theoretical standpoint, these differ in how the rulebase can be modified.
+From a more pragmatic standpoint, these differ in how information can be passed through the program.
+I go through an example illustrating these differences.
+
+Consider a (seemingly) simple problem of maintaining an updatable counter.
+Semantically, we want to allow the operations of getting the current value of the counter, and incrementing the counter.
+Now say we are implementing such a counter in LP.
+Because LP does not allow the rulebase to be modified in any way, the programmer is forced to pass the value of the counter through the program itself.
+In this style, we explicitly pass along what the current value of the counter is to the code that needs it, and we simulate incrementing the counter by passing along a variable which just happens to be equal to the old counter plus one.
+While this style works, it is obviously quite annoying; we are forced to pass around a bit of state that likely does not change often.
+This is similar in spirit to purely functional programming, except we lack nice things like state monads to encapsulate the pain.
+
+Now say we implement this counter in ILP.
+In ILP, it seems tempting to put the counter in the rulebase itself.
+In this way, the rulebase is used to implicitly hold state of the program, which can be accessed just like any other fact.
+That is, instead of writing the following (as in LP):
+
+\begin{verbatim}
+foo(X, Counter) :-
+    CurrentCounter = Counter,
+    ...
+\end{verbatim}
+
+\noindent \ldots we can instead write the following in ILP:
+
+\begin{verbatim}
+foo(X) :-
+    counter(CurrentCounter),
+    ...
+\end{verbatim}
+
+\noindent That is, when we want the current value of the counter, we simply ask the rulebase for it, as opposed to polluting definitions which use the counter with an auxilliary variable.
+
+While ILP helps us when it comes to getting the current value of the counter, it actually causes problems when it comes to updating the counter.
+Naively, in order to update the counter, we need to add a fact to the rulebase that the counter is equal to the old counter plus one.
+To demonstrate, consider the following code:
+
+\begin{verbatim}
+foo(X) :-
+    counter(CurrentCounter),
+    ...
+
+    % Recursively process foo with Y, incrementing the counter
+    NewCounter is CurrentCounter + 1,
+    counter(NewCounter) => foo(Y).
+\end{verbatim}
+
+In the above code, \texttt{foo(Y)} is processed under a context which has the incremented counter as a new fact, which is exactly what is desired.
+The problem is that this same context \textbf{still} has the old counter as a fact, too!
+As such, future calls to \texttt{counter(C)} will nondeterministically bind \texttt{C} to every value the counter has ever been ``assigned'' to, which is hardly the intended behavior.
+
+What would fix our counter example in ILP is the capability to remove the old counter fact from the rulebase before adding the new counter with a new fact, which would end up making calls to \texttt{counter(C)} deterministic with the current counter.
+For this purpose, we really want ILLP.
+In addition to allowing for the dynamic addition of facts, as in ILP, ILLP allows for the dynamic removal of facts.
+Given that the underlying linear logic is the logic of resources, this intuitively makes sense: ILLP has a way to mark a resource as consumed, and facts are themselves resources.
+
+In summary, LP disallows for any dynamic modification of the rulebase, ILP allows for the dynamic addition of facts to the rulebase, and ILLP allows for the dynamic addition and removal of facts to/from the rulebase.
+
