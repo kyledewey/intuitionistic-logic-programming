@@ -10,7 +10,7 @@ As such, hypothetical reasoning is an important capability for a logic to have, 
 \label{sec:lp_limitations}
 LP is, unfortunately, a poor fit for performing hypothetical reasoning.
 For example, consider the requirements for graduation from a university, adapted from Bonner~\cite{Bonner88}.
-A possible query is ``If a took a given class $C$, would I be eligible to graduate?''
+A possible query is ``If a student $S$ took a given class $C$, would $S$ be eligible to graduate?''
 Assuming which classes have been taken is represented as a rulebase, which is arguably the most natural representation possible, this sort of question is difficult to answer.
 Fundamentally, it requires adding a fact to the rulebase and asking the modified rulebase if the student is eligible for graduation, and this act of modifying the rulebase is not possible in pure, classical LP.
 
@@ -18,34 +18,24 @@ While there are extralogical (i.e., not representable in pure LP) extensions to 
 Care must be taken to ensure that for every fact added, there is a corresponding removal of the same fact, or else the rulebase will be modified for a time beyond that of the query.
 This can lead to very subtle bugs.
 Moreover, even with these extralogical features, we are limited to the kinds of facts we can add.
-For example, say we want to add in the following fact to a rulebase holding classes which have been taken, indicating that the student has taken some class \texttt{C}:
+For example, say we want to add in the following fact to a rulebase holding classes which have been taken, indicating that the student \texttt{alice} has taken some class \texttt{C}:
 
 \begin{verbatim}
-take(C).
+taken(alice, C).
 \end{verbatim}
 
 \noindent If the variable \texttt{C} above is uninstantiated, then we can easily get unsound behavior with typical extralogical features (e.g., \texttt{assert}).
 For example, consider the following query:
 
 \begin{verbatim}
-:- take(class1), take(class2).
+:- taken(alice, class1), taken(alice, class2).
 \end{verbatim}
 
 \noindent The above query will always succeed, \textbf{independent of} the rest of the contents of the rulebase.
 This is because with these extralogical features, facts get treated like whole new horn clauses at the global level (i.e., declared with \texttt{:-}).
 This gives us unsound behavior with respect to hypothetical reasoning.
-Our intention with this fact was to say ``assume I have taken some unknown class $C$'', but the actual fact which is inserted states ``assume I have taken all possible classes''.
-In general, there is no way to fix this problem in LP---we cannot add hypothetical facts to a database.
-
-\subsubsection{Workarounds}
-This section is somewhat of an aside to how people deal with this problem in LP.
-It consists mostly of my own observations drawn from both my experience coding in LP and reading software engineering materials on writing Prolog.
-
-The workaround in classical LP to allow for hypothetical reasoning is to take information out of the rulebase and put it directly into queries instead.
-For the example above, this means that instead of putting classes taken directly in the rulebase, we instead encode the classes taken in a data structure, and pass this data structure around.
-This can be unnatural and downright obnoxious depending on how much state needs to be passed around, and can be seen as an anti-pattern.
-That said, in the Prolog world this seems to be such an automatic thing that, as far as I can tell, no one points this out as a problem.
-
+Our intention with this fact was to say ``assume \texttt{alice} has taken some unknown class $C$'', but the actual fact which is inserted states ``assume \texttt{alice} has taken all possible classes''.
+In general, there is no way to fix this problem in LP directly, as it fundamentally disallows adding hypothetical facts to the rulebase.
 
 \subsection{Enter ILP}
 The intention behind ILP is to provide capabilities for correct hypothetical reasoning directly at the logic level, without requiring any sort of ad-hoc extralogical features.
@@ -55,13 +45,64 @@ In ILP, the rulebase allows for dynamic additions in a scoped manner via implica
 For example, I can issue the following query in ILP:
 
 \begin{verbatim}
-:- (take(C) => canGraduate), not(canGraduate).
+?- (taken(S, C) => mayGraduate(S)), not(mayGraduate(S)).
 \end{verbatim}
 
-The above query will add the fact \texttt{take(C)} to the rulebase, and then execute \texttt{canGraduate} under this modified rulebase.
-Once the call to \texttt{canGraduate} finishes, the rulebase is reverted to exactly what it was before \texttt{take(C)} was added.
-Finally, we check to see that \texttt{canGraduate} is not satisfiable under the original rulebase.
-If the query as a whole succeeds, this means that the student is one class away from being able to graduate, and \texttt{C} will conveniently be bound to whatever class remaining to take that is necessary to graduate.
+The above query will add the fact \texttt{taken(S, C)} to the rulebase, and then executes \texttt{mayGraduate(S)} under this modified rulebase.
+Once the call to \texttt{mayGraduate} finishes, the rulebase is reverted to exactly what it was before \texttt{taken(S, C)} was added.
+Finally, we check to see that \texttt{mayGraduate} is not satisfiable under the original rulebase.
+If the query as a whole succeeds, this means that the student \texttt{S} is one class away from being able to graduate, and \texttt{C} will conveniently be nondeterministically bound to whatever individual classes \texttt{C} that student \texttt{S} can take to graduate.
+
+\subsubsection{Hypothetical Reasoning in LP}
+While ILP's big advantage is hypothetical reasoning, this is not to say that hypothetical reasoning is impossible to perform in LP.
+It is, in fact, possible to perform hypothetical reasoning in LP, though it can quickly become unwieldy.
+Because LP disallows modifying the rulebase, we must incorporate a sort of auxilliary rulebase as part of the query itself.
+This auxilliary rulebase is passed around just like normal data, and can be manipulated as such.
+To demonstrate how this works, consider the following code written in ILP style:
+
+\begin{verbatim}
+taken(alice, class1).
+taken(bob,   class1).
+taken(bob,   class2).
+
+mayGraduate(S) :-
+    taken(S, class1),
+    taken(S, class2).
+
+?- taken(alice, class2) => mayGraduate(S).
+\end{verbatim}
+
+The query in the above code is expected to nondeterministically bind \texttt{S} to \texttt{alice} and \texttt{bob}, representing the fact that if \texttt{alice} has \texttt{taken} \texttt{class2}, then both \texttt{alice} and \texttt{bob} \texttt{mayGraduate}.
+In pure LP, we cannot perform hypothetical reasoning, and so the use of \texttt{=>} in the above code is forbidden.
+Instead, we must encode \texttt{taken} directly in the queries, like so:
+
+\begin{verbatim}
+initialTaken([taken(alice, class1),
+              taken(bob,   class1),
+              taken(bob,   class2)]).
+
+mayGraduate(S, Taken) :-
+    member(taken(S, class1), Taken),
+    member(taken(S, class2), Taken).
+
+?- initialTaken(Initial),
+   mayGraduate(S, [taken(alice, class2)|Initial]).
+\end{verbatim}
+
+In the above LP code, instead of accessing the rulebase directly to learn what classes we have taken, we instead record this information in a list holding a sequence of \texttt{taken} structures.
+To add a fact to this list, we simply prepend an element to the front of the list using the \texttt{|} operator.
+To determine if a given student has taken a class, we search the list for such a fact using \texttt{member}.
+
+While the above code works, there are some severe downsides.
+For one, queries get polluted with auxilliary information, and we must take care to ensure the information is passed around appropriately.
+This is error-prone to say the least.
+Worse yet, because the rulebase is being treated as data, there are severe performance penalties for doing this.
+Consider a rulebase containing 10,000 \texttt{taken} relations, where \texttt{bob} is the student involved in just 2 of those relations.
+If we specifically ask for relations involving \texttt{bob}, because of indexing optimizations~\cite{Ait-Kaci:1991:WAM:113900, AICPub641:1983}, the fact that the rulebase is so large is irrelevant to the performance of this query.
+That is, most engines need not scan over all 10,000 relations to find the two relations that involve \texttt{bob}.
+However, with this ILP emulation, because the rulebase ends up being represented as a list, the same query must scan over all the 10,000 relations.
+We could index the list ourselves, but then we are dangerously close to implementing an ILP language in LP --- this should be an engine concern, not a user concern.
+
 
 \subsection{Relationship to Logic}
 In ILP, the idea of dynamically adding facts in a scoped manner is derived from the natural deduction rule of implication introduction, shown below:
@@ -115,6 +156,17 @@ Multiple natural deduction rules update $\Gamma$ (or, equivalently, the rulebase
   \item Negation introduction
   \item Existential quantification elimination
 \end{itemize}
+
+For convenience, these aforementioned rules are shown below:
+
+\vspace{0.1in}
+\begin{tabular}{|c|c|c|}
+  \infer[\To\!\!\text{I}]{\hyp A \To B \tr}{\hyp[,A] B\tr} &
+  \infer[\neg\text{I}]{\hyp \neg A\tr}{\hyp[,A] \bot\tr} &
+  \infer[\exists\text{E}]{\hyp B\tr}{\hyp \exists x.A\tr \qquad
+\hyp[,A{[x \mapsto a]}] B\tr}
+\end{tabular}
+\vspace{0.1in}
 
 It turns out in classical logic programming, none of the above rules exist.
 That is, classical logic programming only corresponds to a \textbf{fragment} of classical logic.
