@@ -1,0 +1,65 @@
+\section{Performing Hypothetical Reasoning in LP}
+While ILP's big advantage is hypothetical reasoning, this is not to say that hypothetical reasoning is impossible to perform in LP.
+It is, in fact, possible to perform hypothetical reasoning in LP, though it can quickly become unwieldy.
+Because LP disallows modifying the rulebase, we must incorporate a sort of auxilliary rulebase as part of the query itself.
+This auxilliary rulebase is passed around just like normal data, and can be manipulated as such.
+To demonstrate how this works, consider the following code written in ILP style:
+
+\begin{verbatim}
+taken(alice, class1).
+taken(bob,   class1).
+taken(bob,   class2).
+
+mayGraduate(S) :-
+    taken(S, class1),
+    taken(S, class2).
+
+?- taken(alice, class2) => mayGraduate(S).
+\end{verbatim}
+
+The query in the above code is expected to nondeterministically bind \texttt{S} to \texttt{alice} and \texttt{bob}, representing the fact that if \texttt{alice} has \texttt{taken} \texttt{class2}, then both \texttt{alice} and \texttt{bob} \texttt{mayGraduate}.
+In pure LP, we cannot perform hypothetical reasoning, and so the use of \texttt{=>} in the above code is forbidden.
+Instead, we must encode \texttt{taken} directly in the queries, like so:
+
+\begin{verbatim}
+initialTaken([taken(alice, class1),
+              taken(bob,   class1),
+              taken(bob,   class2)]).
+
+mayGraduate(S, Taken) :-
+    member(taken(S, class1), Taken),
+    member(taken(S, class2), Taken).
+
+?- initialTaken(Initial),
+   mayGraduate(S, [taken(alice, class2)|Initial]).
+\end{verbatim}
+
+In the above LP code, instead of accessing the rulebase directly to learn what classes we have taken, we instead record this information in a list holding a sequence of \texttt{taken} structures.
+To add a fact to this list, we simply prepend an element to the front of the list using the \texttt{|} operator.
+To determine if a given student has taken a class, we search the list for such a fact using \texttt{member}.
+
+While the above code works, this is clearly cumbersome, and there are severe performance implications.
+The following subsections describe these problems and possible solutions in detail.
+
+\subsection{Passing Around Hypothetical Facts More Easily}
+Forcing the user to explicitly pass around hypothetical facts is tedious and error-prone.
+Every clause that transitively uses hypothetical facts must pass them around, which leads to code bloat.
+A seemingly obvious solution to this problem from the functional programming community is to use a monad~\cite{Moggi:1989:CLM:77350.77353} to encapsulate the rulebase.
+The monad itself can then take care of threading through the rulebase, effectively implicitly passing it around.
+The problem with this approach is that monads assume the presence of higher-order functions, and pure LP lacks these features.
+While it is possible to simulate these capabilities with extralogical metaprogramming constructs like \texttt{call}, this tends to be even more cumbersome and error-prone than explicitly passing hypothetical facts manually, not to mention major performance drawbacks of this approach.
+A better idea here is to use definite clause grammars (DCG)~\cite{Abramson:1984:DCT:901674} to pass the facts around implicitly, which are already present in Prolog systems.
+One can view DCGs as a highly specialized state monad implementation, which accomplishes its work via syntactic rewriting.
+With DCGs, code clarity issues could be overcome, but performance issues remain.
+
+\subsection{Performance Concerns of Hypothetical Facts}
+The user pays a severe performance penalty for using data like a rulebase.
+Consider a rulebase containing 10,000 \texttt{taken} relations, where \texttt{bob} is the student involved in just 2 of those relations.
+If we specifically ask for relations involving \texttt{bob}, because of indexing optimizations~\cite{Ait-Kaci:1991:WAM:113900, AICPub641:1983}, the fact that the rulebase is so large tends to be irrelevant to the performance of this query.
+That is, most engines need not scan over all 10,000 relations to find the two relations that involve \texttt{bob}.
+However, with this ILP emulation, because the rulebase ends up being represented as a list, the same query must scan over all the 10,000 relations.
+Forcing the user to index the list manually would solve the performance problem, but it passes what should be an engine concern on to the user.
+As such, for performance reasons, it would be better to hide the hypothetical rulebase behind an API, which can handle maintaining an efficient form of the rulebase.
+Additionally, it may be possible to piggyback some information off of the existing rulebase.
+To demonstrate, consider the previous example that defined \texttt{initialTaken} as a list, which represented some base facts that were in the rulebase.
+It is possible to shovel off initial ground facts to the rulebase without sacrificing anything, as long as we had a thin wrapper which would check for the presence of the fact either in the static rulebase or in the dynamic list of hypothetical facts.

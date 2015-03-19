@@ -53,57 +53,6 @@ Once the call to \texttt{mayGraduate} finishes, the rulebase is reverted to exac
 Finally, we check to see that \texttt{mayGraduate} is not satisfiable under the original rulebase.
 If the query as a whole succeeds, this means that the student \texttt{S} is one class away from being able to graduate, and \texttt{C} will conveniently be nondeterministically bound to whatever individual classes \texttt{C} that student \texttt{S} can take to graduate.
 
-\subsubsection{Hypothetical Reasoning in LP}
-While ILP's big advantage is hypothetical reasoning, this is not to say that hypothetical reasoning is impossible to perform in LP.
-It is, in fact, possible to perform hypothetical reasoning in LP, though it can quickly become unwieldy.
-Because LP disallows modifying the rulebase, we must incorporate a sort of auxilliary rulebase as part of the query itself.
-This auxilliary rulebase is passed around just like normal data, and can be manipulated as such.
-To demonstrate how this works, consider the following code written in ILP style:
-
-\begin{verbatim}
-taken(alice, class1).
-taken(bob,   class1).
-taken(bob,   class2).
-
-mayGraduate(S) :-
-    taken(S, class1),
-    taken(S, class2).
-
-?- taken(alice, class2) => mayGraduate(S).
-\end{verbatim}
-
-The query in the above code is expected to nondeterministically bind \texttt{S} to \texttt{alice} and \texttt{bob}, representing the fact that if \texttt{alice} has \texttt{taken} \texttt{class2}, then both \texttt{alice} and \texttt{bob} \texttt{mayGraduate}.
-In pure LP, we cannot perform hypothetical reasoning, and so the use of \texttt{=>} in the above code is forbidden.
-Instead, we must encode \texttt{taken} directly in the queries, like so:
-
-\begin{verbatim}
-initialTaken([taken(alice, class1),
-              taken(bob,   class1),
-              taken(bob,   class2)]).
-
-mayGraduate(S, Taken) :-
-    member(taken(S, class1), Taken),
-    member(taken(S, class2), Taken).
-
-?- initialTaken(Initial),
-   mayGraduate(S, [taken(alice, class2)|Initial]).
-\end{verbatim}
-
-In the above LP code, instead of accessing the rulebase directly to learn what classes we have taken, we instead record this information in a list holding a sequence of \texttt{taken} structures.
-To add a fact to this list, we simply prepend an element to the front of the list using the \texttt{|} operator.
-To determine if a given student has taken a class, we search the list for such a fact using \texttt{member}.
-
-While the above code works, there are some severe downsides.
-For one, queries get polluted with auxilliary information, and we must take care to ensure the information is passed around appropriately.
-This is error-prone to say the least.
-Worse yet, because the rulebase is being treated as data, there are severe performance penalties for doing this.
-Consider a rulebase containing 10,000 \texttt{taken} relations, where \texttt{bob} is the student involved in just 2 of those relations.
-If we specifically ask for relations involving \texttt{bob}, because of indexing optimizations~\cite{Ait-Kaci:1991:WAM:113900, AICPub641:1983}, the fact that the rulebase is so large is irrelevant to the performance of this query.
-That is, most engines need not scan over all 10,000 relations to find the two relations that involve \texttt{bob}.
-However, with this ILP emulation, because the rulebase ends up being represented as a list, the same query must scan over all the 10,000 relations.
-We could index the list ourselves, but then we are dangerously close to implementing an ILP language in LP --- this should be an engine concern, not a user concern.
-
-
 \subsection{Relationship to Logic}
 In ILP, the idea of dynamically adding facts in a scoped manner is derived from the natural deduction rule of implication introduction, shown below:
 
